@@ -16,6 +16,7 @@ dist/
 *.sig
 
 pkg/
+src/__pycache__/
 
 .DS_Store
 *.swp
