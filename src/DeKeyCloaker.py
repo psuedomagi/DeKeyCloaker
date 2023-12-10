@@ -1,3 +1,7 @@
+"""
+TODO: This is currently a non-functional skeleton. Needs to be further developed and set up to handle an array of login and authentication requirements. Very few of the methods/classes are currently integrated, and probably needs refactored.  Work in progress.
+"""
+
 import base64
 import hashlib
 import html
@@ -30,6 +34,7 @@ class KeycloakUser:
 
     username = field()
     password = field()
+    ssl_path = field()
     access_token  = field()
     pkce_code_verifier = field()
     pkce_code_challenge = field()
@@ -64,9 +69,35 @@ class KeycloakRealm:
     code_challenge : PKCE code challenge for the realm
     id_token : ID token for the realm
     """
-
+    provider: str = field()
+    realm: str = field()
+    ssl_cert_path: str = field()
+    config: Dict[str, Any] = field(factory=dict)
     code_challenge = field()
     id_token = field()
+
+    async def discover_settings(self) -> None:
+        discovery_url: str = f"{self.provider}/realms/{self.realm}/.well-known/openid-configuration"
+        async with httpx.AsyncClient(verify=self.ssl_cert_path) as client:
+            response: httpx.Response = await client.get(url=discovery_url)
+            if response.status_code == 200:
+                self.config = response.json()
+            else:
+                raise httpx.HTTPStatusError(message=f"Error fetching realm settings: {response.text}", request=response.request)
+
+    async def fetch_auth_methods(self, user_id: str) -> list:
+        """
+        Fetches available authentication methods for a user.
+
+        :param user_id: The user ID to inspect
+        :return: List of authentication methods available
+        """
+        async with httpx.AsyncClient() as client:
+            url = f"{self.provider}/{self.realm}/users/{user_id}/configured-user-storage-credential-types"
+            response = await client.get(url)
+            if response.status_code == 200:
+                return response.json()
+        return []
 
 class KeycloakAuth:
     """
@@ -307,26 +338,8 @@ class KeycloakSessionManager:
             await asyncio.sleep(self.refresh_interval)
             await self.refresh_access_token()
 
-class KeycloakInspector:
-    def __init__(self, base_url: str, realm: str):
-        self.base_url = base_url
-        self.realm = realm
 
-    async def fetch_auth_methods(self, user_id: str) -> list:
-        """
-        Fetches available authentication methods for a user.
-
-        :param user_id: The user ID to inspect
-        :return: List of authentication methods available
-        """
-        async with httpx.AsyncClient() as client:
-            url = f"{self.base_url}/{self.realm}/users/{user_id}/configured-user-storage-credential-types"
-            response = await client.get(url)
-            if response.status_code == 200:
-                return response.json()
-        return []
-
-class DeCloaker:
+class DeKeyCloaker:
     """
     A class for handling various aspects of authentication cloaking.
 
